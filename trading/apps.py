@@ -1,5 +1,5 @@
-from django.apps import AppConfig
+# from django.apps import AppConfig
 
 
-class TradingConfig(AppConfig):
-    name = 'trading'
+# class TradingConfig(AppConfig):
+#     name = 'trading'
