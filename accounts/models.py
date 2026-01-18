@@ -310,3 +310,50 @@ class RiskLimit(models.Model):
 
     class Meta:
         db_table = "risk_limits"
+
+
+class NotificationLevel(models.TextChoices):
+    """Notification severity levels"""
+
+    INFO = "INFO", "Info"
+    WARNING = "WARNING", "Warning"
+    CRITICAL = "CRITICAL", "Critical"
+
+
+class Notification(models.Model):
+    """System notifications for risk alerts and user events"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="notifications"
+    )
+    account = models.ForeignKey(
+        Account,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        null=True,
+        blank=True,
+    )
+
+    message = models.TextField()
+    level = models.CharField(
+        max_length=10, choices=NotificationLevel.choices, default=NotificationLevel.INFO
+    )
+    is_read = models.BooleanField(default=False)
+
+    # Optional metadata for additional context
+    metadata = models.JSONField(default=dict)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "notifications"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["user", "is_read"]),
+            models.Index(fields=["account", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.level} - {self.user.email} - {self.message[:50]}"

@@ -4,7 +4,8 @@ from .revenue import RevenueReportView
 from .risk_view import (
     RiskAlertView,
     UpdateGlobalLimitsView,
-    UpdateForbiddenInstrumentsView
+    UpdateForbiddenInstrumentsView,
+    GlobalRiskLimitAPI,
 )
 
 urlpatterns = [
@@ -13,5 +14,6 @@ urlpatterns = [
     path('risk/alerts/', RiskAlertView.as_view(), name='admin-risk-alerts'),
     path('risk/update-limits/', UpdateGlobalLimitsView.as_view(), name='admin-update-global-limits'),
     path('risk/update-forbidden-instruments/', UpdateForbiddenInstrumentsView.as_view(), name='admin-update-forbidden-instruments'),
+    path('risk/global-limits/', GlobalRiskLimitAPI.as_view(), name='admin-global-risk-limits-api'),
 ]
 
