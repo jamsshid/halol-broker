@@ -115,8 +115,14 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 
 class AccountSerializer(serializers.ModelSerializer):
+    """
+    Account serializer with multi-mode support.
+    Dynamically adjusts response based on CalmMode (Ultra Calm blurs numbers).
+    """
     available_balance = serializers.ReadOnlyField()
     margin_level = serializers.ReadOnlyField()
+    is_blurred = serializers.SerializerMethodField()
+    display_mode = serializers.SerializerMethodField()
 
     class Meta:
         model = Account
@@ -134,9 +140,53 @@ class AccountSerializer(serializers.ModelSerializer):
             "daily_loss_current",
             "max_leverage",
             "is_shariat_compliant",
+            "is_blurred",
+            "display_mode",
             "created_at",
         ]
         read_only_fields = ["id", "account_number", "locked_balance", "equity"]
+
+    def get_is_blurred(self, obj):
+        """Check if numbers should be blurred based on CalmMode"""
+        request = self.context.get('request')
+        if not request or not request.user:
+            return False
+        
+        user = request.user
+        # Ultra Calm mode + Real account = blur numbers
+        is_ultra_calm = user.compliance_mode == ComplianceMode.ULTRA_CALM.value
+        is_real_account = obj.account_type == AccountType.REAL.value
+        
+        return is_ultra_calm and is_real_account
+
+    def get_display_mode(self, obj):
+        """Get display mode based on user's CalmMode"""
+        request = self.context.get('request')
+        if not request or not request.user:
+            return 'full'
+        
+        user = request.user
+        if user.compliance_mode == ComplianceMode.ULTRA_CALM.value:
+            return 'ultra_calm'  # Blur numbers
+        elif user.compliance_mode == ComplianceMode.SHARIAT_COMPLIANT.value:
+            return 'semi_calm'  # Full visibility but with Sharia indicators
+        else:
+            return 'full'  # Standard mode
+
+    def to_representation(self, instance):
+        """Override to blur sensitive data in Ultra Calm mode"""
+        data = super().to_representation(instance)
+        
+        if data.get('is_blurred'):
+            # Blur financial numbers in Ultra Calm mode
+            data['balance'] = '***'
+            data['available_balance'] = '***'
+            data['locked_balance'] = '***'
+            data['equity'] = '***'
+            data['max_daily_loss'] = '***' if data.get('max_daily_loss') else None
+            data['daily_loss_current'] = '***' if data.get('daily_loss_current') else None
+        
+        return data
 
 
 class WalletSerializer(serializers.ModelSerializer):

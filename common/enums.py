@@ -146,3 +146,14 @@ class CalmMode(str, Enum):
     @classmethod
     def choices(cls):
         return [(item.value, item.name) for item in cls]
+
+
+class ShariaContractType(str, Enum):
+    """Sharia-compliant contract types"""
+
+    VAKALA = "vakala"
+    MUDARABA = "mudaraba"
+
+    @classmethod
+    def choices(cls):
+        return [(item.value, item.name.upper()) for item in cls]

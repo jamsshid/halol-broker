@@ -98,3 +98,10 @@ class SecurityException(TradingPlatformException):
 
     def __init__(self, message="Security violation", details=None):
         super().__init__(message=message, code="SECURITY_VIOLATION", details=details)
+
+
+class RiskLimitExceeded(TradingPlatformException):
+    """Raised when risk limit is exceeded (daily loss, leverage, etc.)"""
+
+    def __init__(self, message="Risk limit exceeded", details=None):
+        super().__init__(message=message, code="RISK_LIMIT_EXCEEDED", details=details)

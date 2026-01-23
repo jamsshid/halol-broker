@@ -18,6 +18,7 @@ urlpatterns = [
     path("allauth/", include("allauth.urls")),
     path("api/accounts/", include("accounts.urls")),
     path("api/admin/", include("admin_panel.urls")),
+    path("api/payments/webhooks/", include("accounts.api.payment_webhook_urls")),
     # path("api/trade/", include("trading.api.urls")),
 ]
 

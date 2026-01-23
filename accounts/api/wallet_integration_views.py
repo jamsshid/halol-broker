@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from ..services.wallet_service import WalletService
 from ..models import Account
-from common.exceptions import InsufficientBalanceError, AccountSuspendedError
+from common.exceptions import InsufficientBalanceError, AccountSuspendedError, RiskLimitExceeded, DailyLossLimitExceeded
 
 
 class WalletLockView(APIView):
@@ -42,6 +42,19 @@ class WalletLockView(APIView):
                 {"error": "Account not found"}, status=status.HTTP_404_NOT_FOUND
             )
 
+        # Daily Loss QA: Check if daily loss limit exceeded before locking balance
+        daily_loss_ok = WalletService.check_daily_loss_limit(account)
+        if not daily_loss_ok:
+            return Response(
+                {
+                    "error": f"Daily loss limit exceeded. Current: {account.daily_loss_current}, Limit: {account.max_daily_loss}. Balance locking rejected.",
+                    "code": "RISK_LIMIT_EXCEEDED",
+                    "daily_loss_current": str(account.daily_loss_current),
+                    "daily_loss_max": str(account.max_daily_loss)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         try:
             txn = WalletService.lock_balance(
                 account_id=account_id,
@@ -58,7 +71,7 @@ class WalletLockView(APIView):
                     "available_balance": account.available_balance,
                 }
             )
-        except (InsufficientBalanceError, AccountSuspendedError) as e:
+        except (InsufficientBalanceError, AccountSuspendedError, RiskLimitExceeded, DailyLossLimitExceeded) as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 

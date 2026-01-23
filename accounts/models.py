@@ -1,13 +1,10 @@
-from django.contrib.auth.models import AbstractUser
-from django.db import models
-from django.core.validators import MinValueValidator
-from decimal import Decimal
-import uuid
-from decimal import Decimal
-from common.enums import *
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
+from decimal import Decimal
+import uuid
 from django.utils.translation import gettext_lazy as _
+from common.enums import *
 
 
 
@@ -90,11 +87,24 @@ class Account(models.Model):
         max_digits=18, decimal_places=2, default=Decimal("0.00")
     )
     daily_loss_reset_date = models.DateField(auto_now_add=True)
-    max_leverage = models.IntegerField(default=100)
+    max_leverage = models.IntegerField(
+        default=100,
+        validators=[MinValueValidator(1), MaxValueValidator(500)],
+        help_text="Maximum leverage ratio (1:max_leverage). Sharia limit: 1:500 (hard limit)"
+    )
 
     # Compliance
     is_shariat_compliant = models.BooleanField(default=False)
     swap_free = models.BooleanField(default=False)
+    is_frozen = models.BooleanField(
+        default=False,
+        help_text="Account frozen due to Sharia compliance violation"
+    )
+    freeze_reason = models.TextField(
+        blank=True,
+        help_text="Reason for account freeze"
+    )
+    frozen_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -102,6 +112,13 @@ class Account(models.Model):
     class Meta:
         db_table = "accounts"
         unique_together = ["user", "account_type"]
+        indexes = [
+            models.Index(fields=["user", "account_type"]),
+            models.Index(fields=["user", "status"]),
+            models.Index(fields=["account_type", "status"]),
+            models.Index(fields=["created_at"]),
+            models.Index(fields=["is_frozen", "status"]),
+        ]
 
     def __str__(self):
         return f"{self.account_number} ({self.account_type})"
@@ -176,6 +193,15 @@ class Transaction(models.Model):
     description = models.TextField(blank=True)
     metadata = models.JSONField(default=dict)
 
+    # Sharia compliance
+    sharia_contract_type = models.CharField(
+        max_length=20,
+        choices=[(t.value, t.name) for t in ShariaContractType],
+        null=True,
+        blank=True,
+        help_text="Sharia contract type (VAKALA or MUDARABA) for compliance validation"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
@@ -184,8 +210,13 @@ class Transaction(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["account", "-created_at"]),
+            models.Index(fields=["account", "status", "-created_at"]),
             models.Index(fields=["status"]),
+            models.Index(fields=["transaction_type", "status"]),
             models.Index(fields=["trade_id"]),
+            models.Index(fields=["created_at"]),
+            models.Index(fields=["sharia_contract_type"]),
+            models.Index(fields=["account", "transaction_type", "-created_at"]),
         ]
 
 
@@ -357,3 +388,62 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.level} - {self.user.email} - {self.message[:50]}"
+
+
+class SystemAccount(models.Model):
+    """
+    System Account for Liquidity Provider (LP) operations.
+    Used for platform's internal liquidity management.
+    """
+    
+    ACCOUNT_TYPES = [
+        ('lp_main', 'LP Main Account'),
+        ('lp_reserve', 'LP Reserve Account'),
+        ('lp_settlement', 'LP Settlement Account'),
+        ('platform_revenue', 'Platform Revenue Account'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account_type = models.CharField(max_length=20, choices=ACCOUNT_TYPES)
+    account_number = models.CharField(max_length=20, unique=True, db_index=True)
+    
+    # Balance fields
+    balance = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
+    locked_balance = models.DecimalField(
+        max_digits=18, decimal_places=2, default=Decimal("0.00")
+    )
+    
+    # LP specific fields
+    lp_provider_name = models.CharField(max_length=100, blank=True)
+    lp_api_endpoint = models.URLField(blank=True)
+    lp_api_key = models.CharField(max_length=200, blank=True)  # Encrypted in production
+    
+    # Status
+    is_active = models.BooleanField(default=True)
+    auto_settlement_enabled = models.BooleanField(default=False)
+    
+    description = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = "system_accounts"
+        indexes = [
+            models.Index(fields=["account_type"]),
+            models.Index(fields=["account_number"]),
+            models.Index(fields=["is_active"]),
+        ]
+    
+    def __str__(self):
+        return f"{self.account_type} - {self.account_number}"
+    
+    @property
+    def available_balance(self):
+        return self.balance - self.locked_balance

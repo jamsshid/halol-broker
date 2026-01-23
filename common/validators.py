@@ -12,7 +12,12 @@ def validate_positive_decimal(value: Decimal):
 
 
 def validate_leverage(value: int):
-    """Validate leverage value"""
+    """Validate leverage value - Sharia compliance: max 1:500"""
+    if value > 500:
+        raise ValidationError(
+            f"Leverage {value} exceeds Sharia compliance limit of 1:500",
+            params={"value": value},
+        )
     valid_leverages = [1, 2, 5, 10, 20, 50, 100, 200, 500]
     if value not in valid_leverages:
         raise ValidationError(
