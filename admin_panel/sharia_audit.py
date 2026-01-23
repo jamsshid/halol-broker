@@ -238,3 +238,97 @@ class ShariaAuditView(APIView):
             "recommendations": recommendations
         }, status=status.HTTP_200_OK)
 
+
+@extend_schema(
+    summary="Export Sharia Compliance Audit Report",
+    description="Export all transactions with Sharia contract types to CSV/PDF for expert review",
+    parameters=[
+        OpenApiParameter('format', type=str, enum=['csv', 'pdf'], location='query'),
+        OpenApiParameter('start_date', type=str, location='query'),
+        OpenApiParameter('end_date', type=str, location='query'),
+    ]
+)
+class ShariaAuditExportView(APIView):
+    """
+    Export Sharia compliance audit data for expert review.
+    Exports transactions with contract types, fees, and commission breakdown.
+    """
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        """Export audit data as CSV or PDF"""
+        export_format = request.query_params.get('format', 'csv')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        # Build queryset
+        queryset = Transaction.objects.select_related('account', 'account__user').all()
+
+        if start_date:
+            queryset = queryset.filter(created_at__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__lte=end_date)
+
+        # Filter to include only transactions with Sharia contract types or fee/commission
+        queryset = queryset.filter(
+            Q(sharia_contract_type__isnull=False) |
+            Q(transaction_type__in=[TransactionType.FEE.value, TransactionType.COMMISSION.value])
+        )
+
+        if export_format == 'csv':
+            return self._export_csv(queryset)
+        elif export_format == 'pdf':
+            return self._export_pdf(queryset)
+        else:
+            return Response(
+                {'error': 'Invalid format. Use "csv" or "pdf"'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    def _export_csv(self, queryset):
+        """Export transactions to CSV"""
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="sharia_audit_{timezone.now().strftime("%Y%m%d")}.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow([
+            'Transaction ID',
+            'Account Number',
+            'User Email',
+            'Transaction Type',
+            'Sharia Contract Type',
+            'Amount',
+            'Fee/Commission',
+            'Status',
+            'Created At',
+            'Description'
+        ])
+
+        for txn in queryset:
+            writer.writerow([
+                str(txn.id),
+                txn.account.account_number,
+                txn.account.user.email,
+                txn.transaction_type,
+                txn.sharia_contract_type or 'N/A',
+                str(txn.amount),
+                str(txn.amount) if txn.transaction_type in ['fee', 'commission'] else '0.00',
+                txn.status,
+                txn.created_at.isoformat(),
+                txn.description[:100] if txn.description else ''
+            ])
+
+        return response
+
+    def _export_pdf(self, queryset):
+        """Export transactions to PDF (simplified - would use reportlab in production)"""
+        # For MVP, return error message that PDF requires additional dependencies
+        # In production, use reportlab or weasyprint for proper PDF generation
+        return Response(
+            {
+                'error': 'PDF export requires reportlab or weasyprint library. Please use CSV format.',
+                'suggestion': 'Use ?format=csv for CSV export'
+            },
+            status=status.HTTP_501_NOT_IMPLEMENTED
+        )
+

@@ -12,8 +12,14 @@ from django.utils.decorators import method_decorator
 import json
 import logging
 
-from ..services.payment_gateway_service import PaymentGatewayService
-from common.exceptions import PaymentGatewayError, SecurityException
+try:
+    from ..services.payment_gateway_service import PaymentGatewayService
+    from common.exceptions import PaymentGatewayError, SecurityException
+except ImportError as e:
+    logging.error(f"Error importing payment gateway service: {e}")
+    PaymentGatewayService = None
+    PaymentGatewayError = Exception
+    SecurityException = Exception
 
 logger = logging.getLogger(__name__)
 
@@ -44,13 +50,19 @@ class PaymentWebhookView(APIView):
         
         POST /api/payments/webhooks/{gateway_name}/
         """
+        if PaymentGatewayService is None:
+            return Response(
+                {'error': 'Payment gateway service not available'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+        
         try:
             # Get signature from headers (gateway-specific)
             signature = request.META.get('HTTP_X_SIGNATURE') or request.META.get('HTTP_X_WEBHOOK_SIGNATURE')
             
             # Get secret key from settings (should be in environment)
-            # For now, using a placeholder
-            secret_key = None  # Should come from settings.PAYMENT_GATEWAY_SECRETS[gateway_name]
+            from django.conf import settings
+            secret_key = getattr(settings, 'PAYMENT_GATEWAY_SECRETS', {}).get(gateway_name)
             
             # Process webhook
             result = PaymentGatewayService.process_deposit_webhook(

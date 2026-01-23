@@ -203,6 +203,10 @@ SPECTACULAR_SETTINGS = {
 }
 
 # Logging Configuration
+# Create logs directory if it doesn't exist
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -228,10 +232,11 @@ LOGGING = {
         },
         'file': {
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': BASE_DIR / 'logs' / 'django.log',
+            'filename': str(LOGS_DIR / 'django.log'),
             'maxBytes': 1024 * 1024 * 10,  # 10 MB
             'backupCount': 5,
             'formatter': 'verbose',
+            'encoding': 'utf-8',
         },
     },
     'root': {
@@ -278,20 +283,26 @@ CORS_ALLOWED_ORIGINS = config(
 # Sentry Integration (if SENTRY_DSN is set)
 SENTRY_DSN = config("SENTRY_DSN", default=None)
 if SENTRY_DSN:
-    import sentry_sdk
-    from sentry_sdk.integrations.django import DjangoIntegration
-    from sentry_sdk.integrations.celery import CeleryIntegration
-    
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        integrations=[
-            DjangoIntegration(),
-            CeleryIntegration(),
-        ],
-        traces_sample_rate=0.1,  # 10% of transactions
-        send_default_pii=False,  # Don't send PII
-        environment="production" if not DEBUG else "development",
-    )
+    try:
+        import sentry_sdk  # noqa: F401
+        from sentry_sdk.integrations.django import DjangoIntegration  # noqa: F401
+        try:
+            from sentry_sdk.integrations.celery import CeleryIntegration  # noqa: F401
+            integrations = [DjangoIntegration(), CeleryIntegration()]
+        except ImportError:
+            # Celery not installed, skip CeleryIntegration
+            integrations = [DjangoIntegration()]
+        
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=integrations,
+            traces_sample_rate=0.1,  # 10% of transactions
+            send_default_pii=False,  # Don't send PII
+            environment="production" if not DEBUG else "development",
+        )
+    except ImportError:
+        # Sentry SDK not installed, skip initialization
+        pass
 
 # Payment Gateway Secrets (from environment)
 PAYMENT_GATEWAY_SECRETS = {

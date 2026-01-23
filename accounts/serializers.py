@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import Account, Wallet, Transaction, Deposit, Withdrawal, RiskLimit
-from common.enums import *
+from common.enums import AccountType, ComplianceMode, PaymentMethod
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password

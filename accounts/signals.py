@@ -4,16 +4,21 @@ Used for Flutter app real-time PnL updates
 """
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
-import json
 import logging
 
 from .models import Transaction, Account
 from common.enums import TransactionType
 
 logger = logging.getLogger(__name__)
-channel_layer = get_channel_layer()
+
+# Try to get channel layer, but don't fail if channels is not configured
+try:
+    from channels.layers import get_channel_layer
+    from asgiref.sync import async_to_sync
+    channel_layer = get_channel_layer()
+except (ImportError, AttributeError):
+    channel_layer = None
+    logger.warning("Channels not configured. WebSocket updates will be disabled.")
 
 
 @receiver(post_save, sender=Transaction)
@@ -26,7 +31,7 @@ def notify_pnl_update(sender, instance, created, **kwargs):
     if (
         instance.transaction_type == TransactionType.TRADE_PNL.value
         and instance.status == 'completed'
-        and channel_layer
+        and channel_layer is not None
     ):
         try:
             account = instance.account
@@ -72,7 +77,7 @@ def notify_balance_update(sender, instance, **kwargs):
     """
     Send real-time balance update when account balance changes.
     """
-    if channel_layer:
+    if channel_layer is not None:
         try:
             user_id = str(instance.user_id)
             group_name = f"user_{user_id}"
