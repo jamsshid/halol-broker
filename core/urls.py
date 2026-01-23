@@ -18,8 +18,13 @@ urlpatterns = [
     path("allauth/", include("allauth.urls")),
     path("api/accounts/", include("accounts.urls")),
     path("api/admin/", include("admin_panel.urls")),
+<<<<<<< HEAD
     path("api/payments/webhooks/", include("accounts.api.payment_webhook_urls")),
     # path("api/trade/", include("trading.api.urls")),
+=======
+    path("api/trade/", include("trading.api.urls")),
+    path("api/market/", include("market.urls")),
+>>>>>>> 1500818 (bek1)
 ]
 
 if settings.DEBUG:

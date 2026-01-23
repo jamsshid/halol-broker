@@ -299,3 +299,85 @@ class RiskLimitSerializer(serializers.ModelSerializer):
     class Meta:
         model = RiskLimit
         fields = "__all__"
+
+
+# Paginated serializers
+class PaginatedAccountListSerializer(serializers.Serializer):
+    """Paginated account list response"""
+    count = serializers.IntegerField()
+    next = serializers.URLField(allow_null=True)
+    previous = serializers.URLField(allow_null=True)
+    results = AccountSerializer(many=True)
+
+
+class PaginatedDepositListSerializer(serializers.Serializer):
+    """Paginated deposit list response"""
+    count = serializers.IntegerField()
+    next = serializers.URLField(allow_null=True)
+    previous = serializers.URLField(allow_null=True)
+    results = DepositSerializer(many=True)
+
+
+class PaginatedTransactionListSerializer(serializers.Serializer):
+    """Paginated transaction list response"""
+    count = serializers.IntegerField()
+    next = serializers.URLField(allow_null=True)
+    previous = serializers.URLField(allow_null=True)
+    results = TransactionSerializer(many=True)
+
+
+class PaginatedWithdrawalListSerializer(serializers.Serializer):
+    """Paginated withdrawal list response"""
+    count = serializers.IntegerField()
+    next = serializers.URLField(allow_null=True)
+    previous = serializers.URLField(allow_null=True)
+    results = WithdrawalSerializer(many=True)
+
+
+# Patched serializers for partial updates
+class PatchedAccountSerializer(serializers.ModelSerializer):
+    """Account serializer for partial updates"""
+    
+    class Meta:
+        model = Account
+        fields = [
+            "id",
+            "account_type",
+            "status",
+            "balance",
+            "max_daily_loss",
+            "max_leverage",
+            "is_shariat_compliant",
+            "swap_free",
+        ]
+        read_only_fields = ["id", "account_number"]
+
+
+class PatchedDepositSerializer(serializers.ModelSerializer):
+    """Deposit serializer for partial updates"""
+    
+    class Meta:
+        model = Deposit
+        fields = [
+            "id",
+            "status",
+            "gateway_transaction_id",
+            "crypto_txid",
+        ]
+        read_only_fields = ["id", "account", "transaction", "payment_method", "amount", "currency", "created_at"]
+
+
+class PatchedWithdrawalSerializer(serializers.ModelSerializer):
+    """Withdrawal serializer for partial updates"""
+    
+    class Meta:
+        model = Withdrawal
+        fields = [
+            "id",
+            "status",
+            "gateway_transaction_id",
+            "approved_by",
+            "approved_at",
+            "rejection_reason",
+        ]
+        read_only_fields = ["id", "account", "transaction", "payment_method", "amount", "fee", "net_amount", "currency", "destination_address", "created_at"]

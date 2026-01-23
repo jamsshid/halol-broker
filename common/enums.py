@@ -148,6 +148,7 @@ class CalmMode(str, Enum):
         return [(item.value, item.name) for item in cls]
 
 
+<<<<<<< HEAD
 class ShariaContractType(str, Enum):
     """Sharia-compliant contract types"""
 
@@ -157,3 +158,40 @@ class ShariaContractType(str, Enum):
     @classmethod
     def choices(cls):
         return [(item.value, item.name.upper()) for item in cls]
+=======
+class Timeframe(str, Enum):
+    """Trading timeframes"""
+
+    M1 = "M1"   # 1 minute
+    M5 = "M5"   # 5 minutes
+    M15 = "M15" # 15 minutes
+    M30 = "M30" # 30 minutes
+    H1 = "H1"   # 1 hour
+    H4 = "H4"   # 4 hours
+    D1 = "D1"   # 1 day
+    W1 = "W1"   # 1 week
+    MN1 = "MN1" # 1 month
+
+    @classmethod
+    def choices(cls):
+        return [(item.value, item.name) for item in cls]
+    
+    @classmethod
+    def all_values(cls):
+        return [item.value for item in cls]
+
+
+class TradeEvent(str, Enum):
+    """Trade lifecycle events"""
+
+    OPEN = "OPEN"  # Position opened
+    CLOSE = "CLOSE"  # Position closed
+    PARTIAL = "PARTIAL"  # Partial close
+    SL_HIT = "SL_HIT"  # Stop loss hit
+    TP_HIT = "TP_HIT"  # Take profit hit
+    MODIFIED = "MODIFIED"  # Position modified (SL/TP change)
+
+    @classmethod
+    def choices(cls):
+        return tuple([(item.value, item.name) for item in cls])
+>>>>>>> 1500818 (bek1)

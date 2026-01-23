@@ -40,6 +40,40 @@ class RiskLimits:
         "adult_entertainment",
     ]
 
+
+class HalalCrypto:
+    """Halal cryptocurrency list"""
+    
+    HALAL_COINS = [
+        "BTC",   # Bitcoin
+        "ETH",   # Ethereum
+        "USDT",  # Tether
+        "USDC",  # USD Coin
+        "BNB",   # Binance Coin
+        "XRP",   # Ripple
+        "ADA",   # Cardano
+        "SOL",   # Solana
+        "DOT",   # Polkadot
+        "MATIC", # Polygon
+        "LINK",  # Chainlink
+        "UNI",   # Uniswap
+        "AVAX",  # Avalanche
+        "ATOM",  # Cosmos
+        "ALGO",  # Algorand
+    ]
+    
+    @classmethod
+    def is_halal(cls, symbol: str) -> bool:
+        """Check if crypto symbol is halal"""
+        # Remove common prefixes/suffixes
+        symbol_clean = symbol.upper().replace("BTC", "").replace("ETH", "").replace("USDT", "").replace("USDC", "")
+        if symbol_clean:
+            symbol_clean = symbol.split("/")[0] if "/" in symbol else symbol
+        
+        return symbol_clean.upper() in cls.HALAL_COINS or any(
+            coin in symbol.upper() for coin in cls.HALAL_COINS
+        )
+
     # Account balance limits
     MIN_BALANCE_DEMO = Decimal("10000.00")
     MIN_BALANCE_REAL = Decimal("100.00")
@@ -160,3 +194,41 @@ class ErrorCodes:
     INTERNAL_ERROR = 1600
     SERVICE_UNAVAILABLE = 1601
     RATE_LIMIT_EXCEEDED = 1602
+
+
+class TradingConstants:
+    """Trading engine constants"""
+    
+    # Position size calculation
+    MIN_POSITION_SIZE = Decimal("0.0001")  # Minimum position size
+    MAX_POSITION_SIZE = Decimal("1000.0")   # Maximum position size
+    
+    # Price precision
+    PRICE_DECIMAL_PLACES = 6  # For entry_price, stop_loss, take_profit
+    PNL_DECIMAL_PLACES = 2    # For PnL calculations
+    SIZE_DECIMAL_PLACES = 4   # For position_size
+    
+    # Risk validation thresholds
+    MIN_RISK_PERCENT = Decimal("0.01")  # 0.01% minimum risk
+    MAX_RISK_PERCENT = Decimal("10.0")  # 10% maximum risk per trade
+    
+    # Balance checks
+    MIN_BALANCE_FOR_TRADE = Decimal("10.00")  # Minimum balance to open trade
+    
+    # Partial close thresholds
+    PARTIAL_CLOSE_MIN_SIZE = Decimal("0.0001")  # Minimum size for partial close
+    FULL_CLOSE_THRESHOLD = Decimal("0.0001")     # Below this = full close
+    
+    # PnL calculation
+    PNL_QUANTIZE_STEP = Decimal("0.01")  # Round PnL to 2 decimal places
+    
+    # Market data
+    PRICE_FETCH_TIMEOUT = 5  # seconds
+    PRICE_STALE_THRESHOLD = 60  # seconds - price older than this is stale
+    
+    # Trade validation
+    SL_MANDATORY = True  # Stop Loss is mandatory
+    TP_OPTIONAL = True   # Take Profit is optional
+    
+    # Hedge-free logic
+    HEDGE_DISABLED_DEFAULT = True  # Default: hedging disabled

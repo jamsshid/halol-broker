@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 amqp==5.3.1
 asgiref==3.11.0
 attrs==25.4.0
@@ -44,6 +45,14 @@ pyasn1_modules==0.4.2
 pycparser==2.23
 PyJWT==2.10.1
 python-dateutil==2.9.0.post0
+=======
+Django==4.2.7
+djangorestframework==3.16.1
+django-cors-headers==4.3.0
+celery==5.3.4
+redis==5.0.1
+psycopg2-binary==2.9.10
+>>>>>>> 1500818 (bek1)
 python-decouple==3.8
 python-dotenv==1.2.1
 PyYAML==6.0.3

@@ -100,8 +100,30 @@ class SecurityException(TradingPlatformException):
         super().__init__(message=message, code="SECURITY_VIOLATION", details=details)
 
 
+<<<<<<< HEAD
 class RiskLimitExceeded(TradingPlatformException):
     """Raised when risk limit is exceeded (daily loss, leverage, etc.)"""
 
     def __init__(self, message="Risk limit exceeded", details=None):
         super().__init__(message=message, code="RISK_LIMIT_EXCEEDED", details=details)
+=======
+class TradeValidationError(TradingPlatformException):
+    """Raised when trade validation fails (SL not set, invalid price, etc.)"""
+
+    def __init__(self, message="Trade validation failed", details=None):
+        super().__init__(message=message, code="TRADE_VALIDATION_ERROR", details=details)
+
+
+class MarketDataError(TradingPlatformException):
+    """Raised when market data is unavailable or invalid"""
+
+    def __init__(self, message="Market data error", details=None):
+        super().__init__(message=message, code="MARKET_DATA_ERROR", details=details)
+
+
+class RiskLimitError(TradingPlatformException):
+    """Raised when risk limits are exceeded"""
+
+    def __init__(self, message="Risk limit exceeded", details=None):
+        super().__init__(message=message, code="RISK_LIMIT_ERROR", details=details)
+>>>>>>> 1500818 (bek1)
