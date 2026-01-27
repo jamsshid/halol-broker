@@ -218,7 +218,7 @@ def on_pnl_update(
         "unrealized_pnl": str(unrealized_pnl),
         "current_price": str(current_price),
         "entry_price": str(position.entry_price),
-        "pnl_percent": str((unrealized_pnl / (position.position_size * position.entry_price)) * 100) if position.position_size > 0 else "0"),
+        "pnl_percent": str((unrealized_pnl / (position.position_size * position.entry_price)) * 100) if position.position_size > 0 else "0",
     }
     
     # Only log significant PnL changes to avoid spam

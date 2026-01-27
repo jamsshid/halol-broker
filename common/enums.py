@@ -148,7 +148,7 @@ class CalmMode(str, Enum):
         return [(item.value, item.name) for item in cls]
 
 
-<<<<<<< HEAD
+
 class ShariaContractType(str, Enum):
     """Sharia-compliant contract types"""
 
@@ -158,7 +158,7 @@ class ShariaContractType(str, Enum):
     @classmethod
     def choices(cls):
         return [(item.value, item.name.upper()) for item in cls]
-=======
+
 class Timeframe(str, Enum):
     """Trading timeframes"""
 
@@ -194,4 +194,4 @@ class TradeEvent(str, Enum):
     @classmethod
     def choices(cls):
         return tuple([(item.value, item.name) for item in cls])
->>>>>>> 1500818 (bek1)
+

@@ -5,7 +5,7 @@ Tests integration between trading engine, chart data, and dashboard metrics.
 from decimal import Decimal
 from django.test import TestCase
 from django.contrib.auth import get_user_model
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from trading.models import TradeAccount, Instrument, Position
 from trading.services.trade_open import open_trade

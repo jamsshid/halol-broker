@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Halol Broker - Market Prices</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .controls {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .toggle-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .toggle-btn {
+            padding: 10px 20px;
+            border: 2px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .toggle-btn.active {
+            background: #667eea;
+            color: white;
+        }
+        
+        .toggle-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        
+        .refresh-info {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+            padding: 20px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95em;
+        }
+        
+        thead {
+            background: #f8f9fa;
+        }
+        
+        th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 2px solid #dee2e6;
+        }
+        
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .symbol {
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        .price {
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+        }
+        
+        .bid {
+            color: #28a745;
+        }
+        
+        .ask {
+            color: #dc3545;
+        }
+        
+        .mid {
+            color: #6c757d;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        
+        .badge-demo {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .badge-real {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .updating {
+            animation: pulse 1s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📈 Halol Broker Market Prices</h1>
+            <p>Real-time Forex & Crypto Prices</p>
+        </div>
+        
+        <div class="controls">
+            <div class="toggle-group">
+                <span>Mode:</span>
+                <button class="toggle-btn active" id="demoBtn" onclick="setMode(true)">Demo</button>
+                <button class="toggle-btn" id="realBtn" onclick="setMode(false)">Real</button>
+            </div>
+            <div class="refresh-info">
+                Auto-refresh: <span id="refreshCountdown">5</span>s
+            </div>
+        </div>
+        
+        <div class="table-container">
+            <div id="loading" class="loading">Loading market prices...</div>
+            <div id="error" class="error" style="display: none;"></div>
+            <table id="pricesTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Bid</th>
+                        <th>Ask</th>
+                        <th>Mid</th>
+                        <th>Type</th>
+                        <th>Last Update</th>
+                    </tr>
+                </thead>
+                <tbody id="pricesBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/market';
+        const SYMBOLS = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'BTCUSD', 'ETHUSD'];
+        let isDemo = true;
+        let refreshInterval = null;
+        let countdownInterval = null;
+        let countdown = 5;
+
+        function setMode(demo) {
+            isDemo = demo;
+            document.getElementById('demoBtn').classList.toggle('active', demo);
+            document.getElementById('realBtn').classList.toggle('active', !demo);
+            fetchPrices();
+        }
+
+        function updateCountdown() {
+            const countdownEl = document.getElementById('refreshCountdown');
+            if (countdownEl) {
+                countdownEl.textContent = countdown;
+            }
+        }
+
+        function startCountdown() {
+            countdown = 5;
+            updateCountdown();
+            if (countdownInterval) clearInterval(countdownInterval);
+            countdownInterval = setInterval(() => {
+                countdown--;
+                updateCountdown();
+                if (countdown <= 0) {
+                    countdown = 5;
+                }
+            }, 1000);
+        }
+
+        async function fetchPrices() {
+            const loadingEl = document.getElementById('loading');
+            const errorEl = document.getElementById('error');
+            const tableEl = document.getElementById('pricesTable');
+            const tbodyEl = document.getElementById('pricesBody');
+
+            loadingEl.style.display = 'block';
+            errorEl.style.display = 'none';
+            tableEl.style.display = 'none';
+
+            try {
+                // Fetch prices for all symbols
+                const response = await fetch(`${API_BASE}/prices/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        symbols: SYMBOLS,
+                        demo: isDemo
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                if (!data.prices || data.prices.length === 0) {
+                    throw new Error('No prices received');
+                }
+
+                // Clear and populate table
+                tbodyEl.innerHTML = '';
+                data.prices.forEach(price => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="symbol">${price.symbol}</td>
+                        <td class="price bid">${price.bid}</td>
+                        <td class="price ask">${price.ask}</td>
+                        <td class="price mid">${price.mid}</td>
+                        <td>
+                            <span class="badge ${price.demo ? 'badge-demo' : 'badge-real'}">
+                                ${price.demo ? 'Demo' : 'Real'}
+                            </span>
+                        </td>
+                        <td>${new Date(price.timestamp).toLocaleTimeString()}</td>
+                    `;
+                    tbodyEl.appendChild(row);
+                });
+
+                loadingEl.style.display = 'none';
+                tableEl.style.display = 'table';
+                startCountdown();
+
+            } catch (error) {
+                console.error('Error fetching prices:', error);
+                loadingEl.style.display = 'none';
+                errorEl.textContent = `Error: ${error.message}`;
+                errorEl.style.display = 'block';
+            }
+        }
+
+        // Auto-refresh every 5 seconds
+        function startAutoRefresh() {
+            if (refreshInterval) clearInterval(refreshInterval);
+            refreshInterval = setInterval(() => {
+                fetchPrices();
+            }, 5000);
+        }
+
+        // Initial load
+        fetchPrices();
+        startAutoRefresh();
+    </script>
+</body>
+</html>

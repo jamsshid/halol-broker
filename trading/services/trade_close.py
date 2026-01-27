@@ -1,3 +1,7 @@
+"""
+Trade Close Service
+Handles trade closing (full or partial) with PnL calculation, rollback safety, and error handling.
+"""
 from decimal import Decimal
 import logging
 from django.utils import timezone

@@ -1,23 +1,25 @@
 """
-Market price feed with MOCK support for testing.
-Can be switched to real API without changing trade logic.
-Enhanced with simulation features: tick-based movement, volatility, delay.
+Unified Market Price Feed - MT5 Style
+Supports demo (mock) and real (TwelveData/Binance) price feeds with Redis caching.
 """
-from decimal import Decimal
+import json
+import logging
 import random
 import time
-from typing import Optional, Dict, List
-from datetime import datetime, timedelta
+from decimal import Decimal
+from datetime import datetime
+from typing import Optional, Dict, Literal
+
+import requests
+from django.conf import settings
+from django_redis import get_redis_connection
+
+logger = logging.getLogger(__name__)
 
 
 class MockPriceFeed:
-    """
-    Mock price feed for Forex and Crypto.
-    Works independently from real API - can be swapped easily.
-    Enhanced with simulation features for realistic testing.
-    """
+    """Mock price feed for demo accounts - MT5 style tick simulation"""
     
-    # Base prices for mock
     BASE_PRICES = {
         # Forex
         "EURUSD": Decimal("1.1000"),
@@ -34,57 +36,15 @@ class MockPriceFeed:
         "USDCUSD": Decimal("1.0000"),
     }
     
-    # Volatility levels by mode
-    VOLATILITY = {
-        "ULTRA": Decimal("0.0005"),  # Low volatility (0.05%)
-        "SEMI": Decimal("0.0015"),   # Medium volatility (0.15%)
-        "DEFAULT": Decimal("0.001"),  # Default volatility (0.1%)
-    }
+    VOLATILITY = Decimal("0.001")  # 0.1% volatility
     
-    def __init__(self, use_mock: bool = True, enable_delay: bool = True, mode: str = "DEFAULT"):
-        """
-        Args:
-            use_mock: If True, use mock prices. If False, connect to real API.
-            enable_delay: If True, simulate network delay (50-500ms)
-            mode: Mode for volatility ("ULTRA", "SEMI", "DEFAULT")
-        """
-        self.use_mock = use_mock
-        self.enable_delay = enable_delay
-        self.mode = mode.upper() if mode else "DEFAULT"
+    def __init__(self):
         self._price_cache: Dict[str, Decimal] = {}
         self._last_update: Dict[str, datetime] = {}
-        self._price_history: Dict[str, List[Decimal]] = {}  # Track price movement
-        self._tick_count: Dict[str, int] = {}  # Track tick count per symbol
     
     def get_price(self, symbol: str) -> Decimal:
-        """
-        Get current price for symbol with optional delay simulation.
-        
-        Args:
-            symbol: Trading symbol (e.g., "EURUSD", "BTCUSD")
-        
-        Returns:
-            Current price (Decimal)
-        """
-        # Simulate network delay (50-500ms)
-        if self.enable_delay:
-            delay_ms = random.uniform(50, 500) / 1000.0
-            time.sleep(delay_ms)
-        
-        if self.use_mock:
-            return self._get_mock_price(symbol)
-        else:
-            return self._get_real_price(symbol)
-    
-    def _get_mock_price(self, symbol: str) -> Decimal:
-        """
-        Generate mock price with tick-based movement and volatility.
-        Price moves incrementally from previous value (if exists).
-        """
+        """Get mock price with tick-based movement"""
         symbol_upper = symbol.upper()
-        
-        # Get volatility based on mode
-        volatility = self.VOLATILITY.get(self.mode, self.VOLATILITY["DEFAULT"])
         
         # Get previous price or base price
         if symbol_upper in self._price_cache:
@@ -95,169 +55,478 @@ class MockPriceFeed:
                 previous_price = Decimal("100.00")
                 self.BASE_PRICES[symbol_upper] = previous_price
         
-        # Tick-based movement: small incremental change from previous price
-        # Direction can be up or down based on random walk
+        # Tick-based movement: small incremental change
         direction = Decimal("1") if random.random() > 0.5 else Decimal("-1")
-        tick_size = volatility * previous_price * Decimal(str(random.uniform(0.1, 1.0)))
+        tick_size = self.VOLATILITY * previous_price * Decimal(str(random.uniform(0.1, 1.0)))
         current_price = previous_price + (direction * tick_size)
         
-        # Ensure price doesn't go negative or too extreme
+        # Ensure price doesn't go negative
         if current_price <= Decimal("0"):
-            current_price = previous_price * Decimal("0.99")  # Small downward correction
+            current_price = previous_price * Decimal("0.99")
         
-        # Update cache and history
+        # Update cache
         self._price_cache[symbol_upper] = current_price
-        self._last_update[symbol_upper] = datetime.now()
+        self._last_update[symbol_upper] = datetime.utcnow()
         
-        # Track price history (keep last 100 ticks)
-        if symbol_upper not in self._price_history:
-            self._price_history[symbol_upper] = []
-        self._price_history[symbol_upper].append(current_price)
-        if len(self._price_history[symbol_upper]) > 100:
-            self._price_history[symbol_upper].pop(0)
-        
-        # Track tick count
-        self._tick_count[symbol_upper] = self._tick_count.get(symbol_upper, 0) + 1
+        # Self-validation
+        assert current_price > 0, f"Mock price must be positive: {current_price}"
         
         return current_price.quantize(Decimal("0.0001"))
     
-    def _get_real_price(self, symbol: str) -> Decimal:
-        """
-        Get real price from API (placeholder - implement with real API).
-        This method can be swapped without changing trade logic.
-        """
-        # TODO: Implement real API call
-        # For now, fallback to mock
-        return self._get_mock_price(symbol)
-    
-    def get_bid_ask(self, symbol: str, spread: Optional[Decimal] = None) -> Dict[str, Decimal]:
-        """
-        Get bid and ask prices with time-varying spread.
-        
-        Args:
-            symbol: Trading symbol
-            spread: Optional spread (default: varies by time and symbol type)
-        
-        Returns:
-            Dict with 'bid' and 'ask' prices
-        """
+    def get_bid_ask(self, symbol: str) -> Dict[str, Decimal]:
+        """Get bid/ask prices with spread"""
         mid_price = self.get_price(symbol)
         
-        # Time-varying spread (wider during volatile hours, narrower during calm)
-        if spread is None:
-            hour = datetime.now().hour
-            # Wider spread during market open (8-10 AM, 2-4 PM UTC)
-            spread_multiplier = Decimal("1.5") if hour in [8, 9, 14, 15] else Decimal("1.0")
-            
-            if any(c in symbol.upper() for c in ["BTC", "ETH", "USDT", "USDC"]):
-                base_spread = Decimal("0.0001")  # 0.01% for crypto
-            else:
-                base_spread = Decimal("0.0001")  # 1 pip for forex
-            
-            spread = base_spread * spread_multiplier
+        # Calculate spread based on symbol type
+        if any(c in symbol.upper() for c in ["BTC", "ETH", "USDT", "USDC"]):
+            base_spread = Decimal("0.0001")  # 0.01% for crypto
+        else:
+            base_spread = Decimal("0.0001")  # 1 pip for forex
         
-        bid = mid_price - (mid_price * spread / Decimal("2"))
-        ask = mid_price + (mid_price * spread / Decimal("2"))
+        spread = base_spread * mid_price
+        bid = mid_price - (spread / Decimal("2"))
+        ask = mid_price + (spread / Decimal("2"))
         
         return {
             "bid": bid.quantize(Decimal("0.0001")),
             "ask": ask.quantize(Decimal("0.0001")),
             "mid": mid_price
         }
+
+
+class TwelveDataFeed:
+    """TwelveData API feed for Forex symbols (real accounts)"""
     
-    def simulate_tick(self, symbol: str) -> Decimal:
+    BASE_URL = "https://api.twelvedata.com"
+    
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or getattr(settings, 'TWELVEDATA_API_KEY', None)
+    
+    def get_price(self, symbol: str) -> Optional[Decimal]:
+        """Get real price from TwelveData API"""
+        if not self.api_key:
+            logger.warning("TwelveData API key not configured")
+            return None
+        
+        try:
+            url = f"{self.BASE_URL}/price"
+            params = {
+                "symbol": symbol,
+                "apikey": self.api_key,
+                "format": "json"
+            }
+            
+            response = requests.get(url, params=params, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            
+            if "price" in data:
+                price = Decimal(str(data["price"]))
+                # Self-validation
+                assert price > 0, f"TwelveData price must be positive: {price}"
+                logger.info(f"TwelveData price fetched: {symbol}={price}")
+                return price.quantize(Decimal("0.0001"))
+            else:
+                logger.error(f"TwelveData API error: {data}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"TwelveData API error for {symbol}: {str(e)}", exc_info=True)
+            return None
+    
+    def get_bid_ask(self, symbol: str) -> Optional[Dict[str, Decimal]]:
+        """Get bid/ask from TwelveData (uses quote endpoint)"""
+        if not self.api_key:
+            return None
+        
+        try:
+            url = f"{self.BASE_URL}/quote"
+            params = {
+                "symbol": symbol,
+                "apikey": self.api_key,
+                "format": "json"
+            }
+            
+            response = requests.get(url, params=params, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            
+            if "bid_price" in data and "ask_price" in data:
+                bid = Decimal(str(data["bid_price"]))
+                ask = Decimal(str(data["ask_price"]))
+                mid = (bid + ask) / Decimal("2")
+                
+                # Self-validation
+                assert bid > 0, f"TwelveData bid must be positive: {bid}"
+                assert ask > 0, f"TwelveData ask must be positive: {ask}"
+                assert ask > bid, f"TwelveData ask must be greater than bid: {ask} <= {bid}"
+                
+                logger.info(f"TwelveData bid/ask fetched: {symbol} bid={bid} ask={ask}")
+                
+                return {
+                    "bid": bid.quantize(Decimal("0.0001")),
+                    "ask": ask.quantize(Decimal("0.0001")),
+                    "mid": mid.quantize(Decimal("0.0001"))
+                }
+            else:
+                # Fallback to price endpoint
+                price = self.get_price(symbol)
+                if price:
+                    spread = price * Decimal("0.0001")
+                    return {
+                        "bid": (price - spread / Decimal("2")).quantize(Decimal("0.0001")),
+                        "ask": (price + spread / Decimal("2")).quantize(Decimal("0.0001")),
+                        "mid": price
+                    }
+                return None
+                
+        except Exception as e:
+            logger.error(f"TwelveData quote API error for {symbol}: {str(e)}", exc_info=True)
+            return None
+
+
+class BinanceFeed:
+    """Binance API feed for Crypto symbols (real accounts)"""
+    
+    BASE_URL = "https://api.binance.com/api/v3"
+    
+    def get_price(self, symbol: str) -> Optional[Decimal]:
+        """Get real price from Binance API"""
+        try:
+            # Convert symbol format (BTCUSD -> BTCUSDT)
+            binance_symbol = symbol.upper()
+            if not binance_symbol.endswith("USDT") and not binance_symbol.endswith("USD"):
+                # Try to append USDT
+                if "USD" in binance_symbol:
+                    binance_symbol = binance_symbol.replace("USD", "USDT")
+                else:
+                    binance_symbol = f"{binance_symbol}USDT"
+            
+            url = f"{self.BASE_URL}/ticker/price"
+            params = {"symbol": binance_symbol}
+            
+            response = requests.get(url, params=params, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            
+            if "price" in data:
+                price = Decimal(str(data["price"]))
+                # Self-validation
+                assert price > 0, f"Binance price must be positive: {price}"
+                logger.info(f"Binance price fetched: {symbol}={price}")
+                return price.quantize(Decimal("0.0001"))
+            else:
+                logger.error(f"Binance API error: {data}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Binance API error for {symbol}: {str(e)}", exc_info=True)
+            return None
+    
+    def get_bid_ask(self, symbol: str) -> Optional[Dict[str, Decimal]]:
+        """Get bid/ask from Binance order book"""
+        try:
+            # Convert symbol format
+            binance_symbol = symbol.upper()
+            if not binance_symbol.endswith("USDT") and not binance_symbol.endswith("USD"):
+                if "USD" in binance_symbol:
+                    binance_symbol = binance_symbol.replace("USD", "USDT")
+                else:
+                    binance_symbol = f"{binance_symbol}USDT"
+            
+            url = f"{self.BASE_URL}/ticker/bookTicker"
+            params = {"symbol": binance_symbol}
+            
+            response = requests.get(url, params=params, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            
+            if "bidPrice" in data and "askPrice" in data:
+                bid = Decimal(str(data["bidPrice"]))
+                ask = Decimal(str(data["askPrice"]))
+                mid = (bid + ask) / Decimal("2")
+                
+                # Self-validation
+                assert bid > 0, f"Binance bid must be positive: {bid}"
+                assert ask > 0, f"Binance ask must be positive: {ask}"
+                assert ask > bid, f"Binance ask must be greater than bid: {ask} <= {bid}"
+                
+                logger.info(f"Binance bid/ask fetched: {symbol} bid={bid} ask={ask}")
+                
+                return {
+                    "bid": bid.quantize(Decimal("0.0001")),
+                    "ask": ask.quantize(Decimal("0.0001")),
+                    "mid": mid.quantize(Decimal("0.0001"))
+                }
+            else:
+                # Fallback to price endpoint
+                price = self.get_price(symbol)
+                if price:
+                    spread = price * Decimal("0.0001")
+                    return {
+                        "bid": (price - spread / Decimal("2")).quantize(Decimal("0.0001")),
+                        "ask": (price + spread / Decimal("2")).quantize(Decimal("0.0001")),
+                        "mid": price
+                    }
+                return None
+                
+        except Exception as e:
+            logger.error(f"Binance bookTicker API error for {symbol}: {str(e)}", exc_info=True)
+            return None
+
+
+class PriceFeed:
+    """
+    Unified Price Feed - MT5 Style
+    Handles demo (mock) and real (TwelveData/Binance) feeds with Redis caching.
+    """
+    
+    REDIS_TTL = 5  # 5 seconds TTL
+    REDIS_KEY_PREFIX = "price"
+    
+    def __init__(self):
+        self.mock_feed = MockPriceFeed()
+        self.twelvedata_feed = TwelveDataFeed()
+        self.binance_feed = BinanceFeed()
+        self._redis_client = None
+    
+    def _get_redis_client(self):
+        """Get Redis client with fallback"""
+        if self._redis_client is None:
+            try:
+                self._redis_client = get_redis_connection("default")
+            except Exception as e:
+                logger.warning(f"Redis connection failed: {e}")
+                self._redis_client = False  # Mark as unavailable
+        return self._redis_client if self._redis_client else None
+    
+    def _make_redis_key(self, symbol: str) -> str:
+        """Create Redis key for price data"""
+        return f"{self.REDIS_KEY_PREFIX}:{symbol.upper()}"
+    
+    def _is_crypto(self, symbol: str) -> bool:
+        """Check if symbol is crypto"""
+        crypto_keywords = ["BTC", "ETH", "USDT", "USDC", "BNB", "ADA", "SOL", "XRP", "DOT", "DOGE"]
+        return any(keyword in symbol.upper() for keyword in crypto_keywords)
+    
+    def get_price(
+        self, 
+        symbol: str, 
+        account_type: Literal["demo", "real"] = "demo"
+    ) -> Decimal:
         """
-        Simulate a single price tick (incremental price movement).
-        Similar to MT5 tick behavior.
+        Get current price for symbol with Redis caching.
         
         Args:
-            symbol: Trading symbol
+            symbol: Trading symbol (e.g., "EURUSD", "BTCUSD")
+            account_type: "demo" for mock prices, "real" for real API
         
         Returns:
-            New price after tick
-        """
-        return self.get_price(symbol)
-    
-    def simulate_candle(self, symbol: str, timeframe: str = "M1") -> Dict[str, Decimal]:
-        """
-        Simulate a candlestick (OHLC) for given timeframe.
-        Generates multiple ticks and aggregates into OHLC.
+            Current price (Decimal)
         
-        Args:
-            symbol: Trading symbol
-            timeframe: Timeframe (M1, M5, H1, D1)
-        
-        Returns:
-            Dict with 'open', 'high', 'low', 'close', 'volume'
-        """
-        # Number of ticks per candle (approximate)
-        ticks_per_candle = {
-            "M1": 1,
-            "M5": 5,
-            "M15": 15,
-            "M30": 30,
-            "H1": 60,
-            "H4": 240,
-            "D1": 1440,
-        }.get(timeframe.upper(), 1)
-        
-        prices = []
-        for _ in range(ticks_per_candle):
-            price = self.simulate_tick(symbol)
-            prices.append(price)
-        
-        if not prices:
-            price = self.get_price(symbol)
-            prices = [price]
-        
-        open_price = prices[0]
-        close_price = prices[-1]
-        high_price = max(prices)
-        low_price = min(prices)
-        volume = Decimal(str(len(prices)))  # Mock volume
-        
-        return {
-            "open": open_price,
-            "high": high_price,
-            "low": low_price,
-            "close": close_price,
-            "volume": volume,
-        }
-    
-    def set_mode(self, mode: str):
-        """
-        Set volatility mode (ULTRA, SEMI, DEFAULT).
-        
-        Args:
-            mode: Mode string ("ULTRA", "SEMI", "DEFAULT")
-        """
-        self.mode = mode.upper() if mode else "DEFAULT"
-    
-    def get_price_history(self, symbol: str, limit: int = 10) -> List[Decimal]:
-        """
-        Get recent price history for symbol.
-        
-        Args:
-            symbol: Trading symbol
-            limit: Number of recent prices to return
-        
-        Returns:
-            List of recent prices (most recent last)
+        Raises:
+            AssertionError: If price is invalid (<= 0)
         """
         symbol_upper = symbol.upper()
-        history = self._price_history.get(symbol_upper, [])
-        return history[-limit:] if history else []
+        redis_key = self._make_redis_key(symbol_upper)
+        redis_hit = False
+        source = "unknown"
+        
+        # Try Redis cache first
+        redis_client = self._get_redis_client()
+        if redis_client:
+            try:
+                cached_data = redis_client.get(redis_key)
+                if cached_data:
+                    data = json.loads(cached_data)
+                    if account_type == data.get("account_type") and "price" in data:
+                        price = Decimal(str(data["price"]))
+                        # Self-validation
+                        assert price > 0, f"Cached price must be positive: {price}"
+                        redis_hit = True
+                        source = f"redis-{data.get('source', 'unknown')}"
+                        logger.info(
+                            f"Price cache HIT: {symbol_upper} account={account_type} "
+                            f"price={price} source={source}"
+                        )
+                        return price
+            except Exception as e:
+                logger.warning(f"Redis read error: {e}")
+        
+        # Cache miss - fetch from source
+        logger.info(f"Price cache MISS: {symbol_upper} account={account_type}")
+        
+        price = None
+        if account_type == "demo":
+            price = self.mock_feed.get_price(symbol_upper)
+            source = "mock"
+        else:  # real
+            # Try real API based on symbol type
+            if self._is_crypto(symbol_upper):
+                price = self.binance_feed.get_price(symbol_upper)
+                source = "binance"
+            else:
+                price = self.twelvedata_feed.get_price(symbol_upper)
+                source = "twelvedata"
+            
+            # Fallback to mock if real API fails
+            if price is None:
+                logger.warning(
+                    f"Real API failed for {symbol_upper}, falling back to mock"
+                )
+                price = self.mock_feed.get_price(symbol_upper)
+                source = "mock-fallback"
+        
+        # Self-validation
+        assert price is not None, f"Price must not be None for {symbol_upper}"
+        assert price > 0, f"Price must be positive: {price} for {symbol_upper}"
+        
+        # Cache in Redis
+        if redis_client:
+            try:
+                cache_data = {
+                    "price": str(price),
+                    "account_type": account_type,
+                    "source": source,
+                    "timestamp": datetime.utcnow().isoformat() + "Z"
+                }
+                redis_client.setex(
+                    redis_key,
+                    self.REDIS_TTL,
+                    json.dumps(cache_data)
+                )
+            except Exception as e:
+                logger.warning(f"Redis write error: {e}")
+        
+        logger.info(
+            f"Price fetched: {symbol_upper} account={account_type} "
+            f"price={price} source={source} redis_hit={redis_hit}"
+        )
+        
+        return price
+    
+    def get_bid_ask(
+        self, 
+        symbol: str, 
+        account_type: Literal["demo", "real"] = "demo"
+    ) -> Dict[str, Decimal]:
+        """
+        Get bid/ask prices with Redis caching.
+        
+        Args:
+            symbol: Trading symbol
+            account_type: "demo" for mock, "real" for real API
+        
+        Returns:
+            Dict with 'bid', 'ask', 'mid' (all Decimal)
+        
+        Raises:
+            AssertionError: If prices are invalid
+        """
+        symbol_upper = symbol.upper()
+        redis_key = self._make_redis_key(symbol_upper)
+        redis_hit = False
+        source = "unknown"
+        
+        # Try Redis cache first
+        redis_client = self._get_redis_client()
+        if redis_client:
+            try:
+                cached_data = redis_client.get(redis_key)
+                if cached_data:
+                    data = json.loads(cached_data)
+                    if account_type == data.get("account_type") and "bid" in data and "ask" in data:
+                        bid = Decimal(str(data["bid"]))
+                        ask = Decimal(str(data["ask"]))
+                        mid = Decimal(str(data.get("mid", (bid + ask) / Decimal("2"))))
+                        
+                        # Self-validation
+                        assert bid > 0, f"Cached bid must be positive: {bid}"
+                        assert ask > 0, f"Cached ask must be positive: {ask}"
+                        assert ask > bid, f"Cached ask must be greater than bid: {ask} <= {bid}"
+                        
+                        redis_hit = True
+                        source = f"redis-{data.get('source', 'unknown')}"
+                        logger.info(
+                            f"Bid/Ask cache HIT: {symbol_upper} account={account_type} "
+                            f"bid={bid} ask={ask} source={source}"
+                        )
+                        return {"bid": bid, "ask": ask, "mid": mid}
+            except Exception as e:
+                logger.warning(f"Redis read error: {e}")
+        
+        # Cache miss - fetch from source
+        logger.info(f"Bid/Ask cache MISS: {symbol_upper} account={account_type}")
+        
+        price_data = None
+        if account_type == "demo":
+            price_data = self.mock_feed.get_bid_ask(symbol_upper)
+            source = "mock"
+        else:  # real
+            # Try real API based on symbol type
+            if self._is_crypto(symbol_upper):
+                price_data = self.binance_feed.get_bid_ask(symbol_upper)
+                source = "binance"
+            else:
+                price_data = self.twelvedata_feed.get_bid_ask(symbol_upper)
+                source = "twelvedata"
+            
+            # Fallback to mock if real API fails
+            if price_data is None:
+                logger.warning(
+                    f"Real API failed for {symbol_upper}, falling back to mock"
+                )
+                price_data = self.mock_feed.get_bid_ask(symbol_upper)
+                source = "mock-fallback"
+        
+        # Self-validation
+        assert price_data is not None, f"Price data must not be None for {symbol_upper}"
+        assert "bid" in price_data, f"Bid missing in price data for {symbol_upper}"
+        assert "ask" in price_data, f"Ask missing in price data for {symbol_upper}"
+        bid = price_data["bid"]
+        ask = price_data["ask"]
+        mid = price_data.get("mid", (bid + ask) / Decimal("2"))
+        
+        assert bid > 0, f"Bid must be positive: {bid} for {symbol_upper}"
+        assert ask > 0, f"Ask must be positive: {ask} for {symbol_upper}"
+        assert ask > bid, f"Ask must be greater than bid: {ask} <= {bid} for {symbol_upper}"
+        
+        # Cache in Redis
+        if redis_client:
+            try:
+                cache_data = {
+                    "bid": str(bid),
+                    "ask": str(ask),
+                    "mid": str(mid),
+                    "account_type": account_type,
+                    "source": source,
+                    "timestamp": datetime.utcnow().isoformat() + "Z"
+                }
+                redis_client.setex(
+                    redis_key,
+                    self.REDIS_TTL,
+                    json.dumps(cache_data)
+                )
+            except Exception as e:
+                logger.warning(f"Redis write error: {e}")
+        
+        logger.info(
+            f"Bid/Ask fetched: {symbol_upper} account={account_type} "
+            f"bid={bid} ask={ask} source={source} redis_hit={redis_hit}"
+        )
+        
+        return {"bid": bid, "ask": ask, "mid": mid}
 
 
-# Global instance (can be configured via settings)
-_price_feed_instance: Optional[MockPriceFeed] = None
+# Global singleton instance
+_price_feed_instance: Optional[PriceFeed] = None
 
 
-def get_price_feed(use_mock: bool = True) -> MockPriceFeed:
+def get_price_feed() -> PriceFeed:
     """Get price feed instance (singleton pattern)"""
     global _price_feed_instance
     if _price_feed_instance is None:
-        _price_feed_instance = MockPriceFeed(use_mock=use_mock)
+        _price_feed_instance = PriceFeed()
     return _price_feed_instance
 
 
@@ -265,13 +534,3 @@ def reset_price_feed():
     """Reset price feed singleton (useful for testing)"""
     global _price_feed_instance
     _price_feed_instance = None
-
-
-def get_price(symbol: str) -> Decimal:
-    """Convenience function to get price"""
-    return get_price_feed().get_price(symbol)
-
-
-def get_bid_ask(symbol: str) -> Dict[str, Decimal]:
-    """Convenience function to get bid/ask"""
-    return get_price_feed().get_bid_ask(symbol)

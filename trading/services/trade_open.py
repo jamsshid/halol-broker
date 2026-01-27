@@ -1,3 +1,7 @@
+"""
+Trade Open Service
+Handles trade opening with full validation, risk management, and error handling.
+"""
 from decimal import Decimal
 import logging
 from django.utils import timezone
@@ -72,15 +76,23 @@ def open_trade(
                     details=error_context
                 )
             
-            # 2. Check market data availability
+            # 2. Check market data availability using unified PriceFeed
             try:
                 price_feed = get_price_feed()
-                current_price = price_feed.get_price(instrument.symbol)
+                # Use account.account_type to determine price source (demo/real)
+                account_type = account.account_type  # "demo" or "real"
+                current_price = price_feed.get_price(instrument.symbol, account_type=account_type)
                 if current_price is None or current_price <= 0:
                     raise MarketDataError(
                         f"Market data unavailable for {instrument.symbol}",
                         details=error_context
                     )
+            except AssertionError as e:
+                logger.error(f"Price validation failed for {instrument.symbol}: {str(e)}", extra=error_context)
+                raise MarketDataError(
+                    f"Price validation failed for {instrument.symbol}: {str(e)}",
+                    details=error_context
+                )
             except Exception as e:
                 logger.error(f"Market data error for {instrument.symbol}: {str(e)}", extra=error_context)
                 raise MarketDataError(

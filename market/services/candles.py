@@ -266,8 +266,9 @@ class CandlestickService:
         """Generate mock candlestick data as fallback"""
         try:
             from market.price_feed import get_price_feed
-            price_feed = get_price_feed(use_mock=True)
-            base_price = float(price_feed.get_price(symbol) or 1.0)
+            price_feed = get_price_feed()
+            # Use demo account type for mock candles
+            base_price = float(price_feed.get_price(symbol, account_type="demo") or 1.0)
 
             candles = []
             current_time = self._round_to_timeframe(start_time, timeframe)
