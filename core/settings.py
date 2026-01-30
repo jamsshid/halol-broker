@@ -150,11 +150,19 @@ AUTHENTICATION_BACKENDS = [
     "allauth.account.auth_backends.AuthenticationBackend",
 ]
 
-ACCOUNT_LOGIN_METHODS = {"email"}
-ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
-ACCOUNT_EMAIL_VERIFICATION = "optional"  # 'mandatory' yoki 'optional'
-ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+# 1. Primary Authentication Settings
+ACCOUNT_AUTHENTICATION_METHOD = 'email'  # Use 'email' instead of {"email"}
+ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_USERNAME_REQUIRED = False        # Set to False for email-only login
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None  # Correct
+
+# 2. Signup Configuration
+ACCOUNT_SIGNUP_FIELDS = {} 
+
+# 3. Verification & Security
+ACCOUNT_EMAIL_VERIFICATION = "optional"
+ACCOUNT_SESSION_REMEMBER = True
 
 # Google OAuth sozlamalar
 SOCIALACCOUNT_PROVIDERS = {
