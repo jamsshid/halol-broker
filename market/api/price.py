@@ -3,6 +3,7 @@ Market Price API - MT5 Style
 Provides real-time market prices (bid/ask/mid) for Flutter app.
 Supports demo (mock) and real (TwelveData/Binance) price feeds with Redis caching.
 """
+import json
 import logging
 from decimal import Decimal
 from datetime import datetime
@@ -14,6 +15,7 @@ from rest_framework.permissions import AllowAny
 
 from market.price_feed import get_price_feed
 from market.serializers.price import MarketPriceResponseSerializer
+from market.serializers import MarketPriceSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ class MarketPriceAPIView(APIView):
     Get current market price (bid/ask/mid) for a symbol - MT5 Style.
     
     GET /api/market/price?symbol=EURUSD&account=demo
-    GET /api/market/price?symbol=EURUSD&account=real
+    POST /api/market/price/ (set price)
     """
     permission_classes = [AllowAny]  # Public endpoint
     
@@ -44,13 +46,7 @@ class MarketPriceAPIView(APIView):
                 "schema": {"type": "string", "enum": ["demo", "real"], "default": "demo"},
             },
         ],
-        request={
-            "type": "object",
-            "properties": {
-                "symbol": {"type": "string"},
-                "account": {"type": "string", "enum": ["demo", "real"]},
-            }
-        },
+        request=None,
         responses={
             200: OpenApiResponse(
                 response=MarketPriceResponseSerializer,
@@ -86,24 +82,81 @@ class MarketPriceAPIView(APIView):
         
         return self._get_price(symbol, account)
     
+    @extend_schema(
+        request=MarketPriceSerializer,
+        responses={
+            201: OpenApiResponse(
+                description="Price saved successfully",
+                response={
+                    "type": "object",
+                    "properties": {"message": {"type": "string"}}
+                }
+            ),
+            400: OpenApiResponse(
+                description="Bad request - validation error"
+            ),
+            500: OpenApiResponse(
+                description="Internal server error"
+            ),
+        },
+        summary="Set market price",
+        description="Set market price for a trading symbol and save to Redis."
+    )
     def post(self, request):
-        """POST method - get price from JSON body"""
-        symbol = request.data.get("symbol", "").upper()
-        account = request.data.get("account", "demo").lower()
+        """POST method - set price from JSON payload"""
+        serializer = MarketPriceSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        if not symbol:
-            return Response(
-                {"error": "symbol field is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        data = serializer.validated_data
+        symbol = data['symbol']
+        bid = data['bid']
+        ask = data['ask']
+        mode = data['mode']
+        source = data.get('source', '')
         
-        if account not in ["demo", "real"]:
-            return Response(
-                {"error": "account field must be 'demo' or 'real'"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Calculate mid
+        mid = (bid + ask) / 2
         
-        return self._get_price(symbol, account)
+        # Prepare data to save
+        price_data = {
+            'symbol': symbol,
+            'bid': str(bid),
+            'ask': str(ask),
+            'mid': str(mid),
+            'timestamp': datetime.utcnow().isoformat() + "Z",
+        }
+        
+        # Save to Redis
+        try:
+            import redis
+            from django.conf import settings
+            import os
+            
+            redis_url = os.getenv('REDIS_URL')
+            if redis_url:
+                redis_client = redis.from_url(redis_url)
+            else:
+                # Try existing connection
+                try:
+                    from django_redis import get_redis_connection
+                    redis_client = get_redis_connection("default")
+                except:
+                    redis_client = None
+            
+            if redis_client:
+                key = f"market:{mode}:{symbol}"
+                redis_client.set(key, json.dumps(price_data))
+                logger.info(f"Saved price to Redis: {key}")
+            else:
+                logger.warning("Redis not available, price not saved")
+                return Response({"error": "Redis not available"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        except Exception as e:
+            logger.error(f"Failed to save price: {e}")
+            return Response({"error": "Failed to save price"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response({"message": "Price saved successfully"}, status=status.HTTP_201_CREATED)
     
     def _get_price(self, symbol: str, account: str):
         """

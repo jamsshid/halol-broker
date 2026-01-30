@@ -83,29 +83,29 @@ WSGI_APPLICATION = 'core.wsgi.application'
 ASGI_APPLICATION = "core.asgi.application"
 
 
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.postgresql",
-#         "NAME": config("DB_NAME"),
-#         "USER": config("DB_USER"),
-#         "PASSWORD": config("DB_PASSWORD"),
-#         "HOST": config("DB_HOST", default="127.0.0.1"),
-#         "PORT": config("DB_PORT", default="5432"),
-#     }
-# }
-
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": 'railway',
-        "USER": 'postgres',
-        "PASSWORD": 'wxdlHlpxUkkWfKSayJBUVmwYoQbFNRJK',
-        "HOST": 'shinkansen.proxy.rlwy.net',
-        "PORT": '44131',
+        "NAME": config("DB_NAME"),
+        "USER": config("DB_USER"),
+        "PASSWORD": config("DB_PASSWORD"),
+        "HOST": config("DB_HOST", default="127.0.0.1"),
+        "PORT": config("DB_PORT", default="5432"),
     }
 }
 
-# postgresql://postgres:wxdlHlpxUkkWfKSayJBUVmwYoQbFNRJK@shinkansen.proxy.rlwy.net:44131/railway
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.postgresql",
+#         "NAME": 'railway',
+#         "USER": 'postgres',
+#         "PASSWORD": 'wxdlHlpxUkkWfKSayJBUVmwYoQbFNRJK',
+#         "HOST": 'shinkansen.proxy.rlwy.net',
+#         "PORT": '44131',
+#     }
+# }
+
+
 
 
 REST_FRAMEWORK = {
